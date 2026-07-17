@@ -112,10 +112,11 @@ onSnapshot(
     gameStatusLabelEl.textContent =
       status === "active" ? "Game in play" : status === "paused" ? "Draw paused" : "Awaiting new game";
 
+    const entryFee = data.entryFee ?? 1;
     jackpotSubEl.textContent =
       remaining <= 3 && remaining > 0
         ? `Only ${remaining} card${remaining === 1 ? "" : "s"} left — the odds are shortening!`
-        : "Find the Joker among the cards to win the lot. Every standard card rolls the pot over to next week.";
+        : `Find the Joker among the cards to win the lot. £${entryFee.toFixed(2)} per entry rolls into the pot every week it isn't won.`;
 
     renderDeck(data.totalCards || 0, removed);
   },
