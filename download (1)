@@ -1,0 +1,19 @@
+# Environment secrets
+.env
+scripts/.env
+scripts/service-account.json
+scripts/node_modules
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Firebase CLI
+.firebase/
+firebase-debug.log
+firestore-debug.log
+
+# Vercel
+.vercel

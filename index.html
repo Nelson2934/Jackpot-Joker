@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="felt">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Jackpot Joker — Weekly Draw</title>
+<meta name="description" content="Live jackpot, remaining cards and winner history for the office Jackpot Joker charity draw." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🃏</text></svg>" />
+<link rel="stylesheet" href="css/styles.css" />
+<link rel="stylesheet" href="css/public.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="container topbar__inner">
+    <div class="brand">
+      <span class="brand__mark">JJ</span>
+      <span>
+        Jackpot Joker
+        <span class="brand__eyebrow">Workplace Charity Draw</span>
+      </span>
+    </div>
+    <div class="topbar__actions">
+      <button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false">
+        <span id="themeToggleIcon">🌙</span> <span id="themeToggleLabel">Felt</span>
+      </button>
+      <a class="btn btn--ghost btn--sm" href="admin/index.html">Admin</a>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+
+  <section class="hero" aria-labelledby="jackpotHeading">
+    <span class="hero__eyebrow">This week's jackpot</span>
+    <h1 class="hero__amount" id="jackpotAmount">
+      <span class="skeleton" style="display:inline-block;width:220px;height:64px;border-radius:14px;"></span>
+    </h1>
+    <p class="hero__sub" id="jackpotSub">Find the Joker among the cards to win the lot. Every standard card rolls the pot over to next week.</p>
+    <span class="hero__status" id="gameStatus">
+      <span class="hero__status-dot"></span>
+      <span id="gameStatusLabel">Loading…</span>
+    </span>
+  </section>
+
+  <div class="stat-row" aria-label="Draw statistics">
+    <div class="stat-chip">
+      <span class="stat-chip__label">Active entries</span>
+      <span class="stat-chip__value" id="statActiveEntries">—</span>
+    </div>
+    <div class="stat-chip">
+      <span class="stat-chip__label">Cards remaining</span>
+      <span class="stat-chip__value stat-chip__value--accent" id="statCardsRemaining">—</span>
+    </div>
+    <div class="stat-chip">
+      <span class="stat-chip__label">Next draw</span>
+      <span class="stat-chip__value" id="statNextDraw" style="font-size:1.1rem;">—</span>
+    </div>
+    <div class="stat-chip">
+      <span class="stat-chip__label">Total cards in deck</span>
+      <span class="stat-chip__value" id="statTotalCards">—</span>
+    </div>
+  </div>
+
+  <section class="section" aria-labelledby="deckHeading">
+    <div class="section__head">
+      <h2 class="section__title" id="deckHeading">The deck</h2>
+      <span class="section__hint">Faded cards have already been drawn and are out of play</span>
+    </div>
+    <div class="deck-legend">
+      <span class="deck-legend__item"><span class="deck-legend__swatch" style="background:var(--felt-600)"></span> In play</span>
+      <span class="deck-legend__item"><span class="deck-legend__swatch" style="background:var(--bg-recessed);opacity:.6"></span> Already drawn</span>
+      <span class="deck-legend__item"><span class="deck-legend__swatch" style="background:linear-gradient(160deg,var(--gold-300),var(--gold-600))"></span> Joker (hidden until found)</span>
+    </div>
+    <div class="card-grid" id="cardGrid" aria-live="polite">
+      <!-- cards injected by public.js -->
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="winnersHeading">
+    <div class="section__head">
+      <h2 class="section__title" id="winnersHeading">Previous winners</h2>
+      <span class="section__hint" id="winnersCount"></span>
+    </div>
+    <div class="history-list" id="historyList">
+      <div class="empty-state">Loading winner history…</div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer container">
+  <span>Jackpot Joker · Run for the office social &amp; charity fund. All proceeds to nominated charities.</span>
+  <a href="admin/index.html">Admin sign in →</a>
+</footer>
+
+<div id="toastRoot" class="toast-root"></div>
+
+<script type="module" src="js/public.js"></script>
+</body>
+</html>
