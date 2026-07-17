@@ -3,99 +3,304 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Jackpot Joker — Weekly Draw</title>
-<meta name="description" content="Live jackpot, remaining cards and winner history for the office Jackpot Joker charity draw." />
+<title>Jackpot Joker — Admin Dashboard</title>
+<meta name="robots" content="noindex, nofollow" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🃏</text></svg>" />
-<link rel="stylesheet" href="css/styles.css" />
-<link rel="stylesheet" href="css/public.css" />
+<link rel="stylesheet" href="../css/styles.css" />
+<link rel="stylesheet" href="../css/admin.css" />
 </head>
 <body>
 
-<header class="topbar">
-  <div class="container topbar__inner">
-    <div class="brand">
+<!-- ===================== LOGIN VIEW ===================== -->
+<div id="loginView" class="login-screen">
+  <form id="loginForm" class="login-card" autocomplete="on">
+    <span class="brand__mark" style="margin:0 auto 18px;">JJ</span>
+    <h1 class="login-card__title">Admin sign in</h1>
+    <p class="login-card__sub">Jackpot Joker dashboard — authorised committee members only.</p>
+
+    <label class="field">
+      <span class="field__label">Email</span>
+      <input type="email" id="loginEmail" required autocomplete="username" placeholder="you@company.com" />
+    </label>
+    <label class="field">
+      <span class="field__label">Password</span>
+      <input type="password" id="loginPassword" required autocomplete="current-password" placeholder="••••••••" />
+    </label>
+
+    <button type="submit" class="btn btn--primary btn--block" id="loginSubmit">
+      <span id="loginSubmitLabel">Sign in</span>
+    </button>
+    <button type="button" class="btn btn--ghost btn--block" id="forgotPasswordBtn" style="margin-top:10px;">
+      Forgot password?
+    </button>
+    <p class="login-card__error" id="loginError" role="alert"></p>
+    <a href="../index.html" class="login-card__back">← Back to public display</a>
+  </form>
+</div>
+
+<!-- ===================== DASHBOARD VIEW ===================== -->
+<div id="dashboardView" class="dashboard hidden">
+
+  <aside class="sidebar">
+    <div class="sidebar__brand">
       <span class="brand__mark">JJ</span>
-      <span>
+      <div>
         Jackpot Joker
-        <span class="brand__eyebrow">Workplace Charity Draw</span>
-      </span>
+        <span class="brand__eyebrow">Admin</span>
+      </div>
     </div>
-    <div class="topbar__actions">
-      <button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false">
+
+    <nav class="sidebar__nav" id="sidebarNav">
+      <button class="nav-link is-active" data-panel="panelOverview">📊 Overview</button>
+      <button class="nav-link" data-panel="panelDraw">🃏 Run draw</button>
+      <button class="nav-link" data-panel="panelEntrants">👥 Entrants</button>
+      <button class="nav-link" data-panel="panelHistory">🧾 Draw history</button>
+      <button class="nav-link" data-panel="panelSettings">⚙️ Settings</button>
+      <button class="nav-link" data-panel="panelAudit">🕒 Audit log</button>
+    </nav>
+
+    <div class="sidebar__footer">
+      <button class="theme-toggle" id="themeToggle" type="button" style="width:100%;justify-content:center;">
         <span id="themeToggleIcon">🌙</span> <span id="themeToggleLabel">Felt</span>
       </button>
-      <a class="btn btn--ghost btn--sm" href="admin/index.html">Admin</a>
+      <div class="sidebar__user" id="sidebarUser">—</div>
+      <button class="btn btn--ghost btn--sm btn--block" id="logoutBtn">Sign out</button>
+    </div>
+  </aside>
+
+  <main class="dashboard__main">
+
+    <!-- ---------- OVERVIEW ---------- -->
+    <section class="panel is-active" id="panelOverview">
+      <header class="panel__head">
+        <div><h2>Overview</h2><p class="text-muted">Live snapshot of this week's game.</p></div>
+      </header>
+      <div class="stat-row">
+        <div class="stat-chip"><span class="stat-chip__label">Jackpot</span><span class="stat-chip__value stat-chip__value--accent" id="ovJackpot">—</span></div>
+        <div class="stat-chip"><span class="stat-chip__label">Active entrants</span><span class="stat-chip__value" id="ovEntrants">—</span></div>
+        <div class="stat-chip"><span class="stat-chip__label">Cards remaining</span><span class="stat-chip__value" id="ovCardsRemaining">—</span></div>
+        <div class="stat-chip"><span class="stat-chip__label">Next draw</span><span class="stat-chip__value" id="ovNextDraw" style="font-size:1.05rem;">—</span></div>
+      </div>
+      <div class="quick-actions">
+        <button class="btn btn--primary" data-goto="panelDraw">🃏 Run this week's draw</button>
+        <button class="btn btn--ghost" data-goto="panelEntrants">👥 Manage entrants</button>
+        <button class="btn btn--ghost" data-goto="panelSettings">⚙️ Adjust jackpot / settings</button>
+      </div>
+      <div class="section__head" style="margin-top:36px;">
+        <h3 class="section__title" style="font-size:1.15rem;">Recent draws</h3>
+      </div>
+      <div class="history-list" id="ovRecentDraws"><div class="empty-state">No draws yet.</div></div>
+    </section>
+
+    <!-- ---------- RUN DRAW ---------- -->
+    <section class="panel" id="panelDraw">
+      <header class="panel__head">
+        <div><h2>Run the weekly draw</h2><p class="text-muted">Uses <code>crypto.getRandomValues()</code> for fair, verifiable randomness.</p></div>
+      </header>
+
+      <div class="draw-flow" id="drawFlow">
+        <div class="draw-step" id="drawStep1">
+          <h3>Step 1 — Select a winner</h3>
+          <p class="text-muted">Randomly picks one <em>active</em> entrant.</p>
+          <button class="btn btn--primary" id="selectWinnerBtn">🎲 Select random winner</button>
+          <div class="winner-reveal" id="winnerReveal" hidden>
+            <span class="winner-reveal__label">This week's winner is</span>
+            <span class="winner-reveal__name" id="winnerName"></span>
+          </div>
+        </div>
+
+        <div class="draw-step" id="drawStep2" hidden>
+          <h3>Step 2 — Winner picks a card</h3>
+          <p class="text-muted">Ask <strong id="winnerNameInline">the winner</strong> to choose any card below.</p>
+          <div class="card-grid" id="drawCardGrid"></div>
+        </div>
+
+        <div class="draw-step" id="drawStep3" hidden>
+          <h3>Step 3 — Result</h3>
+          <div id="drawResultPanel"></div>
+          <button class="btn btn--ghost" id="newDrawBtn" style="margin-top:16px;">Start another draw</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- ENTRANTS ---------- -->
+    <section class="panel" id="panelEntrants">
+      <header class="panel__head">
+        <div><h2>Entrants</h2><p class="text-muted">Everyone eligible for the weekly draw.</p></div>
+        <div class="panel__head-actions">
+          <button class="btn btn--ghost btn--sm" id="bulkImportOpenBtn">⬆ Bulk import</button>
+          <button class="btn btn--primary btn--sm" id="addEntrantOpenBtn">+ Add entrant</button>
+        </div>
+      </header>
+
+      <div class="table-toolbar">
+        <input type="search" id="entrantSearch" placeholder="Search entrants…" class="field__input" />
+        <span class="text-muted" id="entrantCountLabel"></span>
+      </div>
+
+      <div class="table-wrap">
+        <table class="data-table" id="entrantsTable">
+          <thead>
+            <tr><th>Name</th><th>Email</th><th>Status</th><th>Joined</th><th></th></tr>
+          </thead>
+          <tbody id="entrantsTbody">
+            <tr><td colspan="5" class="text-muted">Loading entrants…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ---------- DRAW HISTORY ---------- -->
+    <section class="panel" id="panelHistory">
+      <header class="panel__head">
+        <div><h2>Draw history</h2><p class="text-muted">Full log of every draw ever run.</p></div>
+        <div class="panel__head-actions">
+          <button class="btn btn--ghost btn--sm" id="exportCsvBtn">⬇ Export CSV</button>
+        </div>
+      </header>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Date</th><th>Winner</th><th>Card</th><th>Result</th><th>Jackpot at time</th></tr></thead>
+          <tbody id="drawHistoryTbody"><tr><td colspan="5" class="text-muted">Loading history…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ---------- SETTINGS ---------- -->
+    <section class="panel" id="panelSettings">
+      <header class="panel__head">
+        <div><h2>Game settings</h2><p class="text-muted">Configure the jackpot, deck size and draw schedule.</p></div>
+      </header>
+
+      <div class="settings-grid">
+        <div class="card-panel">
+          <h3>Jackpot</h3>
+          <label class="field">
+            <span class="field__label">Current jackpot (£)</span>
+            <input type="number" min="0" step="0.01" id="settingCurrentJackpot" class="field__input" />
+          </label>
+          <label class="field">
+            <span class="field__label">Starting jackpot (£)</span>
+            <input type="number" min="0" step="0.01" id="settingStartingJackpot" class="field__input" />
+          </label>
+          <label class="field">
+            <span class="field__label">Weekly roll-over increment (£)</span>
+            <input type="number" min="0" step="0.01" id="settingWeeklyIncrement" class="field__input" />
+          </label>
+          <div class="btn-row">
+            <button class="btn btn--primary btn--sm" id="saveJackpotBtn">Save jackpot settings</button>
+            <button class="btn btn--ghost btn--sm" id="increaseJackpotBtn">+ Add top-up amount</button>
+            <button class="btn btn--danger btn--sm" id="resetJackpotBtn">Reset to starting value</button>
+          </div>
+        </div>
+
+        <div class="card-panel">
+          <h3>Deck</h3>
+          <label class="field">
+            <span class="field__label">Number of cards in the deck</span>
+            <input type="number" min="2" max="200" step="1" id="settingTotalCards" class="field__input" />
+          </label>
+          <p class="text-muted" style="font-size:.82rem;">Changing this reshuffles the deck: all cards return to play and a new hidden Joker position is generated.</p>
+          <div class="btn-row">
+            <button class="btn btn--primary btn--sm" id="saveDeckBtn">Save deck size</button>
+          </div>
+        </div>
+
+        <div class="card-panel">
+          <h3>Schedule &amp; status</h3>
+          <label class="field">
+            <span class="field__label">Next draw date</span>
+            <input type="date" id="settingNextDraw" class="field__input" />
+          </label>
+          <label class="field">
+            <span class="field__label">Game status</span>
+            <select id="settingGameStatus" class="field__input">
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
+            </select>
+          </label>
+          <div class="btn-row">
+            <button class="btn btn--primary btn--sm" id="saveScheduleBtn">Save schedule</button>
+          </div>
+        </div>
+
+        <div class="card-panel card-panel--danger">
+          <h3>Start new game</h3>
+          <p class="text-muted" style="font-size:.82rem;">Resets the deck, restores the starting jackpot, clears removed cards and generates a fresh Joker position. Draw history is kept.</p>
+          <button class="btn btn--danger" id="startNewGameBtn">🔄 Start new game</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- AUDIT LOG ---------- -->
+    <section class="panel" id="panelAudit">
+      <header class="panel__head">
+        <div><h2>Audit log</h2><p class="text-muted">Every admin action, in order.</p></div>
+      </header>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Timestamp</th><th>Action</th><th>User</th><th>Details</th></tr></thead>
+          <tbody id="auditTbody"><tr><td colspan="4" class="text-muted">Loading audit log…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ===================== MODALS ===================== -->
+
+<div class="modal" id="entrantModal" aria-hidden="true">
+  <div class="modal__panel">
+    <h3 id="entrantModalTitle">Add entrant</h3>
+    <form id="entrantForm">
+      <input type="hidden" id="entrantId" />
+      <label class="field">
+        <span class="field__label">Full name</span>
+        <input type="text" id="entrantName" class="field__input" required />
+      </label>
+      <label class="field">
+        <span class="field__label">Email</span>
+        <input type="email" id="entrantEmail" class="field__input" required />
+      </label>
+      <label class="field field--checkbox">
+        <input type="checkbox" id="entrantActive" checked />
+        <span>Active this week</span>
+      </label>
+      <div class="modal__actions">
+        <button type="button" class="btn btn--ghost" id="entrantModalCancel">Cancel</button>
+        <button type="submit" class="btn btn--primary" id="entrantModalSave">Save entrant</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal" id="bulkImportModal" aria-hidden="true">
+  <div class="modal__panel">
+    <h3>Bulk import entrants</h3>
+    <p class="text-muted" style="font-size:.85rem;">One entrant per line: <code>Name, email@company.com</code></p>
+    <textarea id="bulkImportText" class="field__input" rows="8" placeholder="Jane Doe, jane.doe@company.com&#10;John Smith, john.smith@company.com"></textarea>
+    <div class="modal__actions">
+      <button type="button" class="btn btn--ghost" id="bulkImportCancel">Cancel</button>
+      <button type="button" class="btn btn--primary" id="bulkImportSubmit">Import entrants</button>
     </div>
   </div>
-</header>
+</div>
 
-<main class="container">
-
-  <section class="hero" aria-labelledby="jackpotHeading">
-    <span class="hero__eyebrow">This week's jackpot</span>
-    <h1 class="hero__amount" id="jackpotAmount">
-      <span class="skeleton" style="display:inline-block;width:220px;height:64px;border-radius:14px;"></span>
-    </h1>
-    <p class="hero__sub" id="jackpotSub">Find the Joker among the cards to win the lot. Every standard card rolls the pot over to next week.</p>
-    <span class="hero__status" id="gameStatus">
-      <span class="hero__status-dot"></span>
-      <span id="gameStatusLabel">Loading…</span>
-    </span>
-  </section>
-
-  <div class="stat-row" aria-label="Draw statistics">
-    <div class="stat-chip">
-      <span class="stat-chip__label">Active entries</span>
-      <span class="stat-chip__value" id="statActiveEntries">—</span>
-    </div>
-    <div class="stat-chip">
-      <span class="stat-chip__label">Cards remaining</span>
-      <span class="stat-chip__value stat-chip__value--accent" id="statCardsRemaining">—</span>
-    </div>
-    <div class="stat-chip">
-      <span class="stat-chip__label">Next draw</span>
-      <span class="stat-chip__value" id="statNextDraw" style="font-size:1.1rem;">—</span>
-    </div>
-    <div class="stat-chip">
-      <span class="stat-chip__label">Total cards in deck</span>
-      <span class="stat-chip__value" id="statTotalCards">—</span>
+<!-- Reusable confirm dialog (used by utils.confirmAction) -->
+<div class="confirm-dialog" id="confirmDialog" aria-hidden="true">
+  <div class="confirm-dialog__panel">
+    <h3 class="confirm-dialog__title">Are you sure?</h3>
+    <p class="confirm-dialog__message"></p>
+    <div class="confirm-dialog__actions">
+      <button class="btn btn--ghost confirm-dialog__cancel" type="button">Cancel</button>
+      <button class="btn btn--danger confirm-dialog__confirm" type="button">Confirm</button>
     </div>
   </div>
-
-  <section class="section" aria-labelledby="deckHeading">
-    <div class="section__head">
-      <h2 class="section__title" id="deckHeading">The deck</h2>
-      <span class="section__hint">Faded cards have already been drawn and are out of play</span>
-    </div>
-    <div class="deck-legend">
-      <span class="deck-legend__item"><span class="deck-legend__swatch" style="background:var(--felt-600)"></span> In play</span>
-      <span class="deck-legend__item"><span class="deck-legend__swatch" style="background:var(--bg-recessed);opacity:.6"></span> Already drawn</span>
-      <span class="deck-legend__item"><span class="deck-legend__swatch" style="background:linear-gradient(160deg,var(--gold-300),var(--gold-600))"></span> Joker (hidden until found)</span>
-    </div>
-    <div class="card-grid" id="cardGrid" aria-live="polite">
-      <!-- cards injected by public.js -->
-    </div>
-  </section>
-
-  <section class="section" aria-labelledby="winnersHeading">
-    <div class="section__head">
-      <h2 class="section__title" id="winnersHeading">Previous winners</h2>
-      <span class="section__hint" id="winnersCount"></span>
-    </div>
-    <div class="history-list" id="historyList">
-      <div class="empty-state">Loading winner history…</div>
-    </div>
-  </section>
-
-</main>
-
-<footer class="site-footer container">
-  <span>Jackpot Joker · Run for the office social &amp; charity fund. All proceeds to nominated charities.</span>
-  <a href="admin/index.html">Admin sign in →</a>
-</footer>
+</div>
 
 <div id="toastRoot" class="toast-root"></div>
 
-<script type="module" src="js/public.js"></script>
+<script type="module" src="../js/admin.js"></script>
 </body>
 </html>
