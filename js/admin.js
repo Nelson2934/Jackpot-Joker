@@ -186,13 +186,13 @@ const ovNextDraw = document.getElementById("ovNextDraw");
 
 const settingCurrentJackpot = document.getElementById("settingCurrentJackpot");
 const settingStartingJackpot = document.getElementById("settingStartingJackpot");
-const settingWeeklyIncrement = document.getElementById("settingWeeklyIncrement");
+const settingEntryFee = document.getElementById("settingEntryFee");
 const settingTotalCards = document.getElementById("settingTotalCards");
 const settingNextDraw = document.getElementById("settingNextDraw");
 const settingGameStatus = document.getElementById("settingGameStatus");
 
 let settingsFormDirty = false;
-[settingCurrentJackpot, settingStartingJackpot, settingWeeklyIncrement, settingTotalCards, settingNextDraw, settingGameStatus]
+[settingCurrentJackpot, settingStartingJackpot, settingEntryFee, settingTotalCards, settingNextDraw, settingGameStatus]
   .forEach((el) => el.addEventListener("input", () => (settingsFormDirty = true)));
 
 async function bootstrapSettingsIfMissing() {
@@ -202,7 +202,7 @@ async function bootstrapSettingsIfMissing() {
     await setDoc(SETTINGS_PUBLIC_REF, {
       jackpotAmount: 50,
       startingJackpot: 50,
-      weeklyIncrement: 10,
+      entryFee: 1,
       totalCards,
       removedCards: [],
       nextDrawDate: null,
@@ -235,7 +235,7 @@ function watchSettings() {
     if (!settingsFormDirty) {
       settingCurrentJackpot.value = data.jackpotAmount ?? 0;
       settingStartingJackpot.value = data.startingJackpot ?? 0;
-      settingWeeklyIncrement.value = data.weeklyIncrement ?? 0;
+      settingEntryFee.value = data.entryFee ?? 1;
       settingTotalCards.value = data.totalCards ?? 20;
       settingGameStatus.value = data.gameStatus || "active";
       if (data.nextDrawDate) {
@@ -253,18 +253,18 @@ function watchSettings() {
 document.getElementById("saveJackpotBtn").addEventListener("click", async () => {
   const current = Number(settingCurrentJackpot.value);
   const starting = Number(settingStartingJackpot.value);
-  const weekly = Number(settingWeeklyIncrement.value);
-  if ([current, starting, weekly].some((n) => Number.isNaN(n) || n < 0)) {
+  const entryFee = Number(settingEntryFee.value);
+  if ([current, starting, entryFee].some((n) => Number.isNaN(n) || n < 0)) {
     showToast("Enter valid, non-negative amounts.", "error");
     return;
   }
   await updateDoc(SETTINGS_PUBLIC_REF, {
     jackpotAmount: current,
     startingJackpot: starting,
-    weeklyIncrement: weekly,
+    entryFee,
   });
   settingsFormDirty = false;
-  await logAudit("Jackpot changed", null, `Set current=${formatGBP(current)}, starting=${formatGBP(starting)}, weekly=${formatGBP(weekly)}`);
+  await logAudit("Jackpot changed", null, `Set current=${formatGBP(current)}, starting=${formatGBP(starting)}, entry fee=${formatGBP(entryFee)}`);
   showToast("Jackpot settings saved.", "success");
 });
 
@@ -675,11 +675,13 @@ async function revealCard(cardNumber, slotEl) {
 
     setTimeout(() => {
       drawStep3.hidden = false;
+      const contribLine = `${result.activeEntrants} entr${result.activeEntrants === 1 ? "y" : "ies"} × ${formatGBP(latestPublicSettings?.entryFee ?? 1)} added ${formatGBP(result.entryContribution)} to the pot this week.`;
       if (result.jokerFound) {
         drawResultPanel.innerHTML = `
           <div class="draw-result draw-result--joker">
             <div class="draw-result__title">🃏 JACKPOT WON!</div>
             <div class="draw-result__sub">${escapeHTML(currentWinnerEntrant.name)} found the Joker on card ${cardNumber} and takes home ${formatGBP(result.wonAmount)}!</div>
+            <div class="draw-result__sub" style="margin-top:6px;opacity:.75;">${contribLine}</div>
           </div>`;
         showToast(`${currentWinnerEntrant.name} won the jackpot! 🎉`, "success", 6000);
       } else {
@@ -687,6 +689,7 @@ async function revealCard(cardNumber, slotEl) {
           <div class="draw-result draw-result--standard">
             <div class="draw-result__title">Card ${cardNumber} — no Joker this week</div>
             <div class="draw-result__sub">The jackpot rolls over to ${formatGBP(result.newJackpot)} for next week's draw.</div>
+            <div class="draw-result__sub" style="margin-top:6px;opacity:.75;">${contribLine}</div>
           </div>`;
         showToast(`Card ${cardNumber} was a standard card. Jackpot rolls over.`, "info", 5000);
       }
@@ -720,7 +723,16 @@ async function runDrawTransaction(cardNumber, winnerEntrant) {
 
     const jokerFound = Number(priv.jokerCardPosition) === Number(cardNumber);
     const drawDate = serverTimestamp();
-    const jackpotAtDraw = pub.jackpotAmount || 0;
+
+    // The pot grows by (active entrants × entry fee) this draw, rather than
+    // a flat amount — so it scales with however many people are actually
+    // in this week's draw. This is added to the pot before the outcome is
+    // decided, so a Joker win pays out this week's entries too.
+    const potBeforeEntries = pub.jackpotAmount || 0;
+    const activeEntrants = pub.activeEntrantsCount || 0;
+    const entryFee = pub.entryFee ?? 1;
+    const entryContribution = activeEntrants * entryFee;
+    const jackpotAtDraw = potBeforeEntries + entryContribution;
 
     let newJackpot;
     let newRemoved;
@@ -738,7 +750,7 @@ async function runDrawTransaction(cardNumber, winnerEntrant) {
       tx.set(SETTINGS_PRIVATE_REF, { jokerCardPosition: newJokerPos }, { merge: true });
     } else {
       newRemoved = [...removed, cardNumber];
-      newJackpot = jackpotAtDraw + (pub.weeklyIncrement || 0);
+      newJackpot = jackpotAtDraw;
       tx.update(SETTINGS_PUBLIC_REF, {
         removedCards: newRemoved,
         jackpotAmount: newJackpot,
@@ -753,6 +765,9 @@ async function runDrawTransaction(cardNumber, winnerEntrant) {
       cardChosen: cardNumber,
       result: jokerFound ? "joker" : "standard",
       jackpotAmount: jackpotAtDraw,
+      activeEntrants,
+      entryFee,
+      entryContribution,
     });
 
     const historyRef = doc(collection(db, "history"));
@@ -769,10 +784,10 @@ async function runDrawTransaction(cardNumber, winnerEntrant) {
       action: "Winner selected",
       user: auth.currentUser?.email || "unknown",
       timestamp: drawDate,
-      details: `${winnerEntrant.name} chose card ${cardNumber} — ${jokerFound ? "JOKER" : "standard"}`,
+      details: `${winnerEntrant.name} chose card ${cardNumber} — ${jokerFound ? "JOKER" : "standard"} (+${formatGBP(entryContribution)} from ${activeEntrants} entries)`,
     });
 
-    return { jokerFound, wonAmount: jackpotAtDraw, newJackpot };
+    return { jokerFound, wonAmount: jackpotAtDraw, newJackpot, entryContribution, activeEntrants };
   });
 }
 
@@ -805,7 +820,7 @@ function watchDrawHistory() {
 
 function renderDrawHistoryTable() {
   if (allDraws.length === 0) {
-    drawHistoryTbody.innerHTML = `<tr><td colspan="5" class="text-muted">No draws recorded yet.</td></tr>`;
+    drawHistoryTbody.innerHTML = `<tr><td colspan="6" class="text-muted">No draws recorded yet.</td></tr>`;
     return;
   }
   drawHistoryTbody.innerHTML = allDraws
@@ -816,6 +831,7 @@ function renderDrawHistoryTable() {
         <td>${escapeHTML(d.selectedWinner || "—")}</td>
         <td>#${escapeHTML(String(d.cardChosen ?? "—"))}</td>
         <td><span class="badge ${d.result === "joker" ? "badge--joker" : "badge--standard"}">${d.result === "joker" ? "🃏 Joker" : "Standard"}</span></td>
+        <td class="text-muted">${d.activeEntrants != null ? `${d.activeEntrants} × ${formatGBP(d.entryFee ?? 1)} = ${formatGBP(d.entryContribution ?? 0)}` : "—"}</td>
         <td>${formatGBP(d.jackpotAmount)}</td>
       </tr>`
     )
@@ -854,9 +870,21 @@ document.getElementById("exportCsvBtn").addEventListener("click", () => {
     d.selectedWinner || "",
     d.cardChosen ?? "",
     d.result || "",
+    d.activeEntrants ?? "",
+    (d.entryFee ?? "").toString(),
+    (d.entryContribution ?? 0).toFixed(2),
     (d.jackpotAmount ?? 0).toFixed(2),
   ]);
-  exportToCSV("jackpot-joker-draw-history.csv", rows, ["Date", "Winner", "Card", "Result", "Jackpot (GBP)"]);
+  exportToCSV("jackpot-joker-draw-history.csv", rows, [
+    "Date",
+    "Winner",
+    "Card",
+    "Result",
+    "Active Entries",
+    "Entry Fee (GBP)",
+    "Entries Added to Pot (GBP)",
+    "Jackpot (GBP)",
+  ]);
   showToast("Draw history exported.", "success");
 });
 
