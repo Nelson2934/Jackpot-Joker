@@ -101,7 +101,7 @@
       <div class="draw-flow" id="drawFlow">
         <div class="draw-step" id="drawStep1">
           <h3>Step 1 — Select a winner</h3>
-          <p class="text-muted">Randomly picks one <em>active</em> entrant.</p>
+          <p class="text-muted">Randomly picks one <em>active</em> entrant. If no Joker is found, this week's entry fees (active entrants × entry fee) are added to the pot before it rolls over.</p>
           <button class="btn btn--primary" id="selectWinnerBtn">🎲 Select random winner</button>
           <div class="winner-reveal" id="winnerReveal" hidden>
             <span class="winner-reveal__label">This week's winner is</span>
@@ -160,8 +160,8 @@
       </header>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>Date</th><th>Winner</th><th>Card</th><th>Result</th><th>Jackpot at time</th></tr></thead>
-          <tbody id="drawHistoryTbody"><tr><td colspan="5" class="text-muted">Loading history…</td></tr></tbody>
+          <thead><tr><th>Date</th><th>Winner</th><th>Card</th><th>Result</th><th>Entries → Pot</th><th>Jackpot at time</th></tr></thead>
+          <tbody id="drawHistoryTbody"><tr><td colspan="6" class="text-muted">Loading history…</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -184,9 +184,13 @@
             <input type="number" min="0" step="0.01" id="settingStartingJackpot" class="field__input" />
           </label>
           <label class="field">
-            <span class="field__label">Weekly roll-over increment (£)</span>
-            <input type="number" min="0" step="0.01" id="settingWeeklyIncrement" class="field__input" />
+            <span class="field__label">Entry fee per entrant (£)</span>
+            <input type="number" min="0" step="0.01" id="settingEntryFee" class="field__input" />
           </label>
+          <p class="text-muted" style="font-size:.8rem;margin-top:-6px;">
+            Each draw, the pot grows by <strong>entry fee × active entrants</strong> instead of a flat amount —
+            so it scales with however many people are actually in that week's draw.
+          </p>
           <div class="btn-row">
             <button class="btn btn--primary btn--sm" id="saveJackpotBtn">Save jackpot settings</button>
             <button class="btn btn--ghost btn--sm" id="increaseJackpotBtn">+ Add top-up amount</button>
