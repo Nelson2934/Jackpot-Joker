@@ -34,6 +34,29 @@ export function secureRandomChoice(array) {
   return array[secureRandomInt(array.length)];
 }
 
+/**
+ * Picks one item from an array using secure randomness, weighted by
+ * `weightFn(item)` (e.g. how many raffle entries someone bought). An
+ * entrant with weight 10 is 10× as likely to be picked as one with weight 1.
+ * Falls back to uniform weight 1 for missing/invalid weights.
+ */
+export function secureWeightedChoice(items, weightFn = () => 1) {
+  if (!items || items.length === 0) return null;
+  const weights = items.map((item) => {
+    const w = Math.round(Number(weightFn(item)));
+    return Number.isFinite(w) && w > 0 ? w : 1;
+  });
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+  if (totalWeight <= 0) return null;
+
+  let roll = secureRandomInt(totalWeight); // 0..totalWeight-1
+  for (let i = 0; i < items.length; i++) {
+    if (roll < weights[i]) return items[i];
+    roll -= weights[i];
+  }
+  return items[items.length - 1]; // unreachable in practice; safety net
+}
+
 /** Fisher-Yates shuffle using secure randomness (not currently required, but handy). */
 export function secureShuffle(array) {
   const a = array.slice();
