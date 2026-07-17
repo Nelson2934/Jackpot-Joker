@@ -3,7 +3,7 @@ import { db, auth } from "./firebase-config.js";
 import { login, logout, watchAuth, resetPassword, describeAuthError } from "./auth.js";
 import {
   secureRandomInt,
-  secureRandomChoice,
+  secureWeightedChoice,
   formatGBP,
   formatDate,
   formatDateShort,
@@ -183,6 +183,7 @@ const ovJackpot = document.getElementById("ovJackpot");
 const ovEntrants = document.getElementById("ovEntrants");
 const ovCardsRemaining = document.getElementById("ovCardsRemaining");
 const ovNextDraw = document.getElementById("ovNextDraw");
+const ovCharityTotal = document.getElementById("ovCharityTotal");
 
 const settingCurrentJackpot = document.getElementById("settingCurrentJackpot");
 const settingStartingJackpot = document.getElementById("settingStartingJackpot");
@@ -208,6 +209,7 @@ async function bootstrapSettingsIfMissing() {
       nextDrawDate: null,
       gameStatus: "active",
       activeEntrantsCount: 0,
+      totalRaisedForCharity: 0,
     });
     if (!privSnap.exists()) {
       await setDoc(SETTINGS_PRIVATE_REF, { jokerCardPosition: secureRandomInt(totalCards) + 1 });
@@ -231,6 +233,7 @@ function watchSettings() {
     ovJackpot.textContent = formatGBP(data.jackpotAmount);
     ovCardsRemaining.textContent = Math.max((data.totalCards || 0) - (data.removedCards || []).length, 0);
     ovNextDraw.textContent = data.nextDrawDate ? formatDate(data.nextDrawDate) : "TBC";
+    ovCharityTotal.textContent = formatGBP(data.totalRaisedForCharity ?? 0);
 
     if (!settingsFormDirty) {
       settingCurrentJackpot.value = data.jackpotAmount ?? 0;
@@ -369,16 +372,20 @@ function watchEntrants() {
     allEntrants.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
     renderEntrantsTable();
     syncActiveEntrantsCount();
-    ovEntrants.textContent = allEntrants.filter((e) => e.active).length;
+
+    const activeList = allEntrants.filter((e) => e.active);
+    const totalActiveEntries = activeList.reduce((sum, e) => sum + (Number(e.entries) || 1), 0);
+    ovEntrants.innerHTML =
+      activeList.length === totalActiveEntries
+        ? String(totalActiveEntries)
+        : `${totalActiveEntries} <span class="text-muted" style="font-size:.55em;font-weight:600;">(${activeList.length} people)</span>`;
   });
   unsubscribers.push(unsub);
 }
 
 function renderEntrantsTable() {
   const term = entrantSearch.value.trim().toLowerCase();
-  const filtered = allEntrants.filter(
-    (e) => !term || e.name?.toLowerCase().includes(term) || e.email?.toLowerCase().includes(term)
-  );
+  const filtered = allEntrants.filter((e) => !term || e.name?.toLowerCase().includes(term));
   entrantCountLabel.textContent = `${filtered.length} of ${allEntrants.length} entrants`;
 
   if (filtered.length === 0) {
@@ -387,11 +394,12 @@ function renderEntrantsTable() {
   }
 
   entrantsTbody.innerHTML = filtered
-    .map(
-      (e) => `
+    .map((e) => {
+      const entries = Number(e.entries) || 1;
+      return `
       <tr data-id="${e.id}">
         <td>${escapeHTML(e.name || "—")}</td>
-        <td class="text-muted">${escapeHTML(e.email || "—")}</td>
+        <td>${entries > 1 ? `<span class="badge badge--joker">${entries}×</span>` : `<span class="text-muted">1×</span>`}</td>
         <td><span class="badge ${e.active ? "badge--active" : "badge--inactive"}">${e.active ? "Active" : "Inactive"}</span></td>
         <td class="text-muted">${e.createdAt ? formatDateShort(e.createdAt) : "—"}</td>
         <td>
@@ -401,8 +409,8 @@ function renderEntrantsTable() {
             <button class="icon-btn icon-btn--danger" data-action="delete" title="Remove">🗑️</button>
           </div>
         </td>
-      </tr>`
-    )
+      </tr>`;
+    })
     .join("");
 }
 
@@ -436,10 +444,14 @@ entrantsTbody.addEventListener("click", async (e) => {
 });
 
 async function syncActiveEntrantsCount() {
-  const activeCount = allEntrants.filter((e) => e.active).length;
-  if (latestPublicSettings && latestPublicSettings.activeEntrantsCount === activeCount) return;
+  const activeList = allEntrants.filter((e) => e.active);
+  const totalActiveEntries = activeList.reduce((sum, e) => sum + (Number(e.entries) || 1), 0);
+  if (latestPublicSettings && latestPublicSettings.activeEntrantsCount === totalActiveEntries) return;
   try {
-    await updateDoc(SETTINGS_PUBLIC_REF, { activeEntrantsCount: activeCount });
+    // activeEntrantsCount = total tickets in play this week (not headcount) —
+    // it's what the entry-fee pot math and the public "active entries" stat
+    // are based on, so someone who bought 10 entries counts as 10 here.
+    await updateDoc(SETTINGS_PUBLIC_REF, { activeEntrantsCount: totalActiveEntries });
   } catch (err) {
     console.error("Failed to sync active entrant count:", err);
   }
@@ -454,7 +466,7 @@ const entrantModalTitle = document.getElementById("entrantModalTitle");
 function openEntrantModal(entrant = null) {
   document.getElementById("entrantId").value = entrant?.id || "";
   document.getElementById("entrantName").value = entrant?.name || "";
-  document.getElementById("entrantEmail").value = entrant?.email || "";
+  document.getElementById("entrantEntries").value = entrant?.entries || 1;
   document.getElementById("entrantActive").checked = entrant ? !!entrant.active : true;
   entrantModalTitle.textContent = entrant ? "Edit entrant" : "Add entrant";
   entrantModal.classList.add("is-open");
@@ -474,20 +486,20 @@ entrantForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const id = document.getElementById("entrantId").value;
   const name = document.getElementById("entrantName").value.trim();
-  const email = document.getElementById("entrantEmail").value.trim();
+  const entries = Math.max(1, Math.round(Number(document.getElementById("entrantEntries").value) || 1));
   const active = document.getElementById("entrantActive").checked;
-  if (!name || !email) return;
+  if (!name) return;
 
   const saveBtn = document.getElementById("entrantModalSave");
   saveBtn.disabled = true;
   try {
     if (id) {
-      await updateDoc(doc(db, "entrants", id), { name, email, active });
-      await logAudit("Entrant edited", null, name);
+      await updateDoc(doc(db, "entrants", id), { name, entries, active });
+      await logAudit("Entrant edited", null, `${name} (${entries}× entries)`);
       showToast("Entrant updated.", "success");
     } else {
-      await addDoc(collection(db, "entrants"), { name, email, active, createdAt: serverTimestamp() });
-      await logAudit("Entrant added", null, name);
+      await addDoc(collection(db, "entrants"), { name, entries, active, createdAt: serverTimestamp() });
+      await logAudit("Entrant added", null, `${name} (${entries}× entries)`);
       showToast("Entrant added.", "success");
     }
     closeEntrantModal();
@@ -526,20 +538,28 @@ document.getElementById("bulkImportSubmit").addEventListener("click", async () =
     return;
   }
 
-  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const parsed = [];
   const rejected = [];
   for (const line of lines) {
-    const [namePart, emailPart] = line.split(",").map((s) => s?.trim());
-    if (!namePart || !emailPart || !emailRe.test(emailPart)) {
+    const [namePart, entriesPart] = line.split(",").map((s) => s?.trim());
+    if (!namePart) {
       rejected.push(line);
       continue;
     }
-    parsed.push({ name: namePart, email: emailPart });
+    let entries = 1;
+    if (entriesPart) {
+      const n = Math.round(Number(entriesPart));
+      if (!Number.isFinite(n) || n < 1) {
+        rejected.push(line);
+        continue;
+      }
+      entries = n;
+    }
+    parsed.push({ name: namePart, entries });
   }
 
   if (parsed.length === 0) {
-    showToast("No valid rows found. Use: Name, email@company.com", "error");
+    showToast("No valid rows found. Use: Name or Name, entries", "error");
     return;
   }
 
@@ -549,7 +569,7 @@ document.getElementById("bulkImportSubmit").addEventListener("click", async () =
   try {
     await Promise.all(
       parsed.map((p) =>
-        addDoc(collection(db, "entrants"), { name: p.name, email: p.email, active: true, createdAt: serverTimestamp() })
+        addDoc(collection(db, "entrants"), { name: p.name, entries: p.entries, active: true, createdAt: serverTimestamp() })
       )
     );
     await logAudit("Entrant added", null, `Bulk import of ${parsed.length} entrant(s)`);
@@ -603,9 +623,15 @@ selectWinnerBtn.addEventListener("click", async () => {
   // Small suspense delay purely for UX theatre — the random pick itself is instant.
   await new Promise((r) => setTimeout(r, 550));
 
-  currentWinnerEntrant = secureRandomChoice(active);
+  currentWinnerEntrant = secureWeightedChoice(active, (ent) => ent.entries || 1);
   winnerName.textContent = currentWinnerEntrant.name;
   winnerNameInline.textContent = currentWinnerEntrant.name;
+  const totalTickets = active.reduce((sum, ent) => sum + (Number(ent.entries) || 1), 0);
+  const winnerEntries = Number(currentWinnerEntrant.entries) || 1;
+  document.getElementById("winnerReveal").querySelector(".winner-reveal__label").textContent =
+    winnerEntries > 1
+      ? `This week's winner is (drawn from ${winnerEntries} of ${totalTickets} entries)`
+      : "This week's winner is";
   winnerReveal.hidden = false;
   drawStep2.hidden = false;
   drawStep3.hidden = true;
@@ -679,11 +705,11 @@ async function revealCard(cardNumber, slotEl) {
       if (result.jokerFound) {
         drawResultPanel.innerHTML = `
           <div class="draw-result draw-result--joker">
-            <div class="draw-result__title">🃏 JACKPOT WON!</div>
-            <div class="draw-result__sub">${escapeHTML(currentWinnerEntrant.name)} found the Joker on card ${cardNumber} and takes home ${formatGBP(result.wonAmount)}!</div>
+            <div class="draw-result__title">🃏 JACKPOT FOUND!</div>
+            <div class="draw-result__sub">${escapeHTML(currentWinnerEntrant.name)} found the Joker on card ${cardNumber}! The pot of ${formatGBP(result.wonAmount)} splits 50/50: ${escapeHTML(currentWinnerEntrant.name)} takes home ${formatGBP(result.winnerPayout)}, and ${formatGBP(result.charityAmount)} goes to the charity fund.</div>
             <div class="draw-result__sub" style="margin-top:6px;opacity:.75;">${contribLine}</div>
           </div>`;
-        showToast(`${currentWinnerEntrant.name} won the jackpot! 🎉`, "success", 6000);
+        showToast(`${currentWinnerEntrant.name} won ${formatGBP(result.winnerPayout)}! 🎉`, "success", 6000);
       } else {
         drawResultPanel.innerHTML = `
           <div class="draw-result draw-result--standard">
@@ -724,6 +750,17 @@ async function runDrawTransaction(cardNumber, winnerEntrant) {
     const jokerFound = Number(priv.jokerCardPosition) === Number(cardNumber);
     const drawDate = serverTimestamp();
 
+    // Snapshot exactly what settings looked like immediately before this
+    // draw, so an admin can void it later and have everything — jackpot,
+    // deck, even the secret Joker position — restored precisely.
+    const previousState = {
+      jackpotAmount: pub.jackpotAmount ?? 0,
+      removedCards: pub.removedCards || [],
+      jokerCardPosition: priv.jokerCardPosition,
+      gameStatus: pub.gameStatus || "active",
+      totalRaisedForCharity: pub.totalRaisedForCharity ?? 0,
+    };
+
     // The pot grows by (active entrants × entry fee) this draw, rather than
     // a flat amount — so it scales with however many people are actually
     // in this week's draw. This is added to the pot before the outcome is
@@ -737,8 +774,16 @@ async function runDrawTransaction(cardNumber, winnerEntrant) {
     let newJackpot;
     let newRemoved;
     let newJokerPos = priv.jokerCardPosition;
+    let winnerPayout = 0;
+    let charityAmount = 0;
 
     if (jokerFound) {
+      // Winner takes half the pot; the other half goes into the running
+      // charity total rather than disappearing. Split to the penny, with
+      // any odd remaining penny (from an odd total) going to charity.
+      winnerPayout = Math.floor((jackpotAtDraw / 2) * 100) / 100;
+      charityAmount = Math.round((jackpotAtDraw - winnerPayout) * 100) / 100;
+
       newJackpot = pub.startingJackpot ?? 0;
       newRemoved = [];
       newJokerPos = secureRandomInt(pub.totalCards || 20) + 1;
@@ -746,6 +791,7 @@ async function runDrawTransaction(cardNumber, winnerEntrant) {
         jackpotAmount: newJackpot,
         removedCards: newRemoved,
         gameStatus: "active",
+        totalRaisedForCharity: (pub.totalRaisedForCharity ?? 0) + charityAmount,
       });
       tx.set(SETTINGS_PRIVATE_REF, { jokerCardPosition: newJokerPos }, { merge: true });
     } else {
@@ -758,25 +804,34 @@ async function runDrawTransaction(cardNumber, winnerEntrant) {
     }
 
     const drawRef = doc(collection(db, "draws"));
+    const historyRef = doc(collection(db, "history"));
+
     tx.set(drawRef, {
       date: drawDate,
       selectedWinner: winnerEntrant.name,
       selectedWinnerId: winnerEntrant.id,
+      selectedWinnerEntries: Number(winnerEntrant.entries) || 1,
       cardChosen: cardNumber,
       result: jokerFound ? "joker" : "standard",
       jackpotAmount: jackpotAtDraw,
       activeEntrants,
       entryFee,
       entryContribution,
+      winnerPayout,
+      charityAmount,
+      previousState,
+      historyDocId: historyRef.id,
+      voided: false,
     });
 
-    const historyRef = doc(collection(db, "history"));
     tx.set(historyRef, {
       winner: winnerEntrant.name,
       date: drawDate,
       cardChosen: cardNumber,
       jokerFound,
       jackpotAmount: jokerFound ? jackpotAtDraw : newJackpot,
+      winnerPayout,
+      charityAmount,
     });
 
     const auditRef = doc(collection(db, "auditLogs"));
@@ -784,11 +839,61 @@ async function runDrawTransaction(cardNumber, winnerEntrant) {
       action: "Winner selected",
       user: auth.currentUser?.email || "unknown",
       timestamp: drawDate,
-      details: `${winnerEntrant.name} chose card ${cardNumber} — ${jokerFound ? "JOKER" : "standard"} (+${formatGBP(entryContribution)} from ${activeEntrants} entries)`,
+      details: jokerFound
+        ? `${winnerEntrant.name} chose card ${cardNumber} — JOKER. Won ${formatGBP(winnerPayout)} (half the pot), ${formatGBP(charityAmount)} added to charity total.`
+        : `${winnerEntrant.name} chose card ${cardNumber} — standard (+${formatGBP(entryContribution)} from ${activeEntrants} entries)`,
     });
 
-    return { jokerFound, wonAmount: jackpotAtDraw, newJackpot, entryContribution, activeEntrants };
+    return { jokerFound, wonAmount: jackpotAtDraw, winnerPayout, charityAmount, newJackpot, entryContribution, activeEntrants };
   });
+}
+
+/**
+ * Reverses the most recent draw: restores the jackpot, deck and secret
+ * Joker position to exactly how they were beforehand, deletes the public
+ * history entry, and marks the draw doc as voided (kept for audit purposes
+ * rather than deleted outright).
+ */
+async function voidDraw(drawId) {
+  const drawRef = doc(db, "draws", drawId);
+
+  const summary = await runTransaction(db, async (tx) => {
+    const drawSnap = await tx.get(drawRef);
+    if (!drawSnap.exists()) throw new Error("That draw no longer exists.");
+    const draw = drawSnap.data();
+    if (draw.voided) throw new Error("That draw has already been undone.");
+    if (!draw.previousState) throw new Error("This draw predates the undo feature and can't be reversed automatically.");
+
+    tx.update(SETTINGS_PUBLIC_REF, {
+      jackpotAmount: draw.previousState.jackpotAmount,
+      removedCards: draw.previousState.removedCards,
+      gameStatus: draw.previousState.gameStatus,
+      totalRaisedForCharity: draw.previousState.totalRaisedForCharity ?? 0,
+    });
+    tx.set(SETTINGS_PRIVATE_REF, { jokerCardPosition: draw.previousState.jokerCardPosition }, { merge: true });
+
+    if (draw.historyDocId) {
+      tx.delete(doc(db, "history", draw.historyDocId));
+    }
+
+    tx.update(drawRef, {
+      voided: true,
+      voidedAt: serverTimestamp(),
+      voidedBy: auth.currentUser?.email || "unknown",
+    });
+
+    const auditRef = doc(collection(db, "auditLogs"));
+    tx.set(auditRef, {
+      action: "Draw voided",
+      user: auth.currentUser?.email || "unknown",
+      timestamp: serverTimestamp(),
+      details: `Undid draw for ${draw.selectedWinner} (card ${draw.cardChosen}, ${draw.result}). Jackpot restored to ${formatGBP(draw.previousState.jackpotAmount)}.`,
+    });
+
+    return draw;
+  });
+
+  return summary;
 }
 
 newDrawBtn.addEventListener("click", () => {
@@ -806,6 +911,8 @@ newDrawBtn.addEventListener("click", () => {
 
 const drawHistoryTbody = document.getElementById("drawHistoryTbody");
 const ovRecentDraws = document.getElementById("ovRecentDraws");
+const undoLastDrawBtn = document.getElementById("undoLastDrawBtn");
+const ovUndoLastDrawBtn = document.getElementById("ovUndoLastDrawBtn");
 let allDraws = [];
 
 function watchDrawHistory() {
@@ -814,24 +921,73 @@ function watchDrawHistory() {
     allDraws = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     renderDrawHistoryTable();
     renderRecentDraws();
+    updateUndoButtonState();
   });
   unsubscribers.push(unsub);
 }
 
+function mostRecentUndoableDraw() {
+  return allDraws.find((d) => !d.voided) || null;
+}
+
+function updateUndoButtonState() {
+  const target = mostRecentUndoableDraw();
+  // Only the single most recent draw (by date, regardless of voided ones
+  // mixed in) can be undone — voiding an older draw would leave the deck
+  // and jackpot inconsistent with everything that happened after it.
+  const isActuallyLatest = target && allDraws[0]?.id === target.id;
+  [undoLastDrawBtn, ovUndoLastDrawBtn].forEach((btn) => {
+    btn.disabled = !isActuallyLatest;
+    btn.title = isActuallyLatest
+      ? `Undo ${target.selectedWinner}'s draw (card ${target.cardChosen})`
+      : "Only the most recent draw can be undone";
+  });
+}
+
+async function handleUndoLastDraw() {
+  const target = mostRecentUndoableDraw();
+  if (!target || allDraws[0]?.id !== target.id) return;
+
+  const ok = await confirmAction({
+    title: "Undo the last draw?",
+    message: `This restores the jackpot, deck, Joker position and charity total to how they were just before ${target.selectedWinner}'s draw (card ${target.cardChosen}, ${target.result}). Any settings changes made since then will be lost. This cannot be re-done.`,
+    confirmLabel: "Undo draw",
+  });
+  if (!ok) return;
+
+  [undoLastDrawBtn, ovUndoLastDrawBtn].forEach((btn) => (btn.disabled = true));
+  try {
+    const draw = await voidDraw(target.id);
+    showToast(`Draw undone — jackpot restored to ${formatGBP(draw.previousState.jackpotAmount)}.`, "success");
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Couldn't undo that draw.", "error");
+  } finally {
+    updateUndoButtonState();
+  }
+}
+
+undoLastDrawBtn.addEventListener("click", handleUndoLastDraw);
+ovUndoLastDrawBtn.addEventListener("click", handleUndoLastDraw);
+
 function renderDrawHistoryTable() {
   if (allDraws.length === 0) {
-    drawHistoryTbody.innerHTML = `<tr><td colspan="6" class="text-muted">No draws recorded yet.</td></tr>`;
+    drawHistoryTbody.innerHTML = `<tr><td colspan="7" class="text-muted">No draws recorded yet.</td></tr>`;
     return;
   }
   drawHistoryTbody.innerHTML = allDraws
     .map(
       (d) => `
-      <tr>
+      <tr class="${d.voided ? "is-voided" : ""}">
         <td class="text-muted">${formatDateShort(d.date)}</td>
         <td>${escapeHTML(d.selectedWinner || "—")}</td>
         <td>#${escapeHTML(String(d.cardChosen ?? "—"))}</td>
-        <td><span class="badge ${d.result === "joker" ? "badge--joker" : "badge--standard"}">${d.result === "joker" ? "🃏 Joker" : "Standard"}</span></td>
+        <td>
+          <span class="badge ${d.result === "joker" ? "badge--joker" : "badge--standard"}">${d.result === "joker" ? "🃏 Joker" : "Standard"}</span>
+          ${d.voided ? `<span class="badge badge--inactive" style="margin-left:6px;">Voided</span>` : ""}
+        </td>
         <td class="text-muted">${d.activeEntrants != null ? `${d.activeEntrants} × ${formatGBP(d.entryFee ?? 1)} = ${formatGBP(d.entryContribution ?? 0)}` : "—"}</td>
+        <td class="text-muted">${d.result === "joker" ? `${formatGBP(d.winnerPayout ?? 0)} won / ${formatGBP(d.charityAmount ?? 0)} charity` : "—"}</td>
         <td>${formatGBP(d.jackpotAmount)}</td>
       </tr>`
     )
@@ -847,10 +1003,10 @@ function renderRecentDraws() {
   ovRecentDraws.innerHTML = recent
     .map(
       (d) => `
-      <div class="history-row">
+      <div class="history-row ${d.voided ? "is-voided" : ""}">
         <div class="history-row__badge ${d.result === "joker" ? "is-joker" : ""}">${d.result === "joker" ? "🃏" : `#${d.cardChosen}`}</div>
         <div>
-          <div class="history-row__name">${escapeHTML(d.selectedWinner || "—")}</div>
+          <div class="history-row__name">${escapeHTML(d.selectedWinner || "—")}${d.voided ? ` <span class="badge badge--inactive">Voided</span>` : ""}</div>
           <div class="history-row__date">${formatDateShort(d.date)}</div>
         </div>
         <div class="history-row__amount">${formatGBP(d.jackpotAmount)}</div>
@@ -873,7 +1029,10 @@ document.getElementById("exportCsvBtn").addEventListener("click", () => {
     d.activeEntrants ?? "",
     (d.entryFee ?? "").toString(),
     (d.entryContribution ?? 0).toFixed(2),
+    (d.winnerPayout ?? 0).toFixed(2),
+    (d.charityAmount ?? 0).toFixed(2),
     (d.jackpotAmount ?? 0).toFixed(2),
+    d.voided ? "Voided" : "",
   ]);
   exportToCSV("jackpot-joker-draw-history.csv", rows, [
     "Date",
@@ -883,7 +1042,10 @@ document.getElementById("exportCsvBtn").addEventListener("click", () => {
     "Active Entries",
     "Entry Fee (GBP)",
     "Entries Added to Pot (GBP)",
+    "Winner Payout (GBP)",
+    "Charity Amount (GBP)",
     "Jackpot (GBP)",
+    "Status",
   ]);
   showToast("Draw history exported.", "success");
 });
