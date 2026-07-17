@@ -1,0 +1,16 @@
+/* css/public.css — page-specific tweaks for the public display */
+
+main.container {
+  padding-bottom: 40px;
+}
+
+@media (max-width: 560px) {
+  .hero { padding: 34px 22px; }
+  .topbar__actions .btn--sm { display: none; }
+}
+
+/* Card number label swapped for suit glyphs to reinforce the "deck" motif */
+.card-face__suit--spade::before { content: "♠"; }
+.card-face__suit--heart::before { content: "♥"; }
+.card-face__suit--club::before { content: "♣"; }
+.card-face__suit--diamond::before { content: "♦"; }
