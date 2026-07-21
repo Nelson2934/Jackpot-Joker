@@ -35,6 +35,11 @@ import {
 const SETTINGS_PUBLIC_REF = doc(db, "settings", "public");
 const SETTINGS_PRIVATE_REF = doc(db, "settings", "private");
 
+// Tells the watchdog in admin/index.html that the module's imports resolved
+// and execution actually started — if this never fires, the browser/network
+// blocked one of the imports (most commonly https://www.gstatic.com).
+window.__jjAdminBooted = true;
+
 /* ========================================================================
  * AUTH GUARD + LOGIN
  * ===================================================================== */

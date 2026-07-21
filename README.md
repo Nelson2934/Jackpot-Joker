@@ -127,22 +127,68 @@ No environment variables need setting in Vercel for the site itself — see
 
 1. Admin opens **Run draw** and clicks **Select random winner** — this uses
    `crypto.getRandomValues()` (rejection-sampled, so there's no modulo bias)
-   to pick one *active* entrant.
+   to pick one *active* entrant, **weighted by how many entries they bought**.
+   Someone with 10 entries is 10× as likely to be picked as someone with 1 —
+   see "Multiple entries" below.
 2. The winner (in person, or over a call) is asked to choose any card that's
    still in the grid.
 3. The admin taps that card on their behalf. The pick is resolved inside a
    **Firestore transaction** (`runDrawTransaction` in `js/admin.js`) so two
    admins can never race each other into an inconsistent state.
 4. The card flips:
-   - **Joker →** the winner takes the jackpot. The jackpot resets to the
-     starting value, every card returns to play, and a brand-new Joker
-     position is generated with `crypto.getRandomValues()`.
-   - **Standard card →** that card is permanently removed from the deck,
-     the jackpot rolls over (optionally topped up by the configured weekly
-     increment), and the result is stored in history.
-5. Every outcome is written to **`draws`** (full internal log) and
-   **`history`** (public-facing feed) in the same transaction, plus an
-   **`auditLogs`** entry.
+   - **Joker →** the pot (including this week's entry fees, added just
+     before the outcome is decided) **splits 50/50**: the winner takes home
+     half in cash, and the other half is added to a running
+     **charity total**. The jackpot then resets to the starting value, every
+     card returns to play, and a brand-new Joker position is generated with
+     `crypto.getRandomValues()`.
+   - **Standard card →** that card is permanently removed from the deck.
+     This week's contribution — **total active entries × entry fee** — is
+     added to the pot and it rolls over to next week. The pot grows in
+     proportion to how many tickets are actually in play, not a flat top-up.
+5. Every outcome is written to **`draws`** (full internal log, including the
+   entry count/fee/contribution and, on a Joker win, the winner/charity
+   split for that draw) and **`history`** (public-facing feed) in the same
+   transaction, plus an **`auditLogs`** entry.
+
+### Multiple entries ("buy 10, get 10× the chance")
+
+Entrants only need a **name** — no email required. Each entrant also has an
+**entries** count (defaults to 1) representing how many tickets they bought
+that week:
+
+- **Winner selection is weighted by entries.** `secureWeightedChoice()` in
+  `js/utils.js` builds a cryptographically random pick across the *total*
+  ticket pool, so an entrant with `entries: 10` has exactly 10× the chance
+  of anyone with `entries: 1` — still zero `Math.random()`, just weighted.
+- **The pot math uses total tickets, not headcount.** The "active entries"
+  stat (both public page and admin Overview) and the entry-fee contribution
+  each draw (`active entries × entry fee`) are based on the sum of
+  everyone's `entries`, so someone buying 10 tickets contributes 10× the
+  entry fee to the pot, exactly like 10 separate £1 entrants would.
+- Set/change someone's entry count any time from Admin → Entrants → edit
+  (✏️), or via bulk import: `Name, entries` per line (entries optional,
+  defaults to 1) — e.g. `John Smith, 10`.
+
+### Undoing a mistaken draw
+
+Mistakes happen — the wrong card gets tapped, or the wrong person is
+recorded as the winner. Admin → **Draw history** (or the Overview panel) has
+an **↩ Undo last draw** button that reverses it: the jackpot, deck, secret
+Joker position, and running charity total are restored to exactly how they
+were the instant before that draw, and the corresponding public "previous
+winners" entry is removed. The `draws` record itself is kept (marked `voided: true`) rather
+than deleted, so there's a permanent trail of what happened and who undid it.
+
+Two safety limits, both enforced in `js/admin.js`:
+- **Only the single most recent draw can be undone.** Undoing an older draw
+  would leave the deck/jackpot inconsistent with everything that happened
+  after it, so the button is disabled for anything but the latest entry.
+- **No re-do.** Once undone, that draw can't be undone again — you'd need to
+  re-run the draw properly.
+- If jackpot/deck settings were edited manually *after* the draw but before
+  the undo, those manual edits are overwritten by the restore — the
+  confirmation dialog warns about this before you commit.
 
 ---
 
@@ -150,16 +196,36 @@ No environment variables need setting in Vercel for the site itself — see
 
 | Collection         | Doc                | Fields |
 |---------------------|--------------------|--------|
-| `settings`           | `public`            | `jackpotAmount`, `startingJackpot`, `weeklyIncrement`, `totalCards`, `removedCards[]`, `nextDrawDate`, `gameStatus`, `activeEntrantsCount` |
+| `settings`           | `public`            | `jackpotAmount`, `startingJackpot`, `entryFee`, `totalCards`, `removedCards[]`, `nextDrawDate`, `gameStatus`, `activeEntrantsCount`, `totalRaisedForCharity` |
 | `settings`           | `private`            | `jokerCardPosition` (never exposed publicly) |
-| `entrants`            | `{id}`               | `name`, `email`, `active`, `createdAt` |
-| `draws`                | `{id}`               | `date`, `selectedWinner`, `selectedWinnerId`, `cardChosen`, `result`, `jackpotAmount` |
-| `history`              | `{id}`               | `winner`, `date`, `cardChosen`, `jokerFound`, `jackpotAmount` |
+| `entrants`            | `{id}`               | `name`, `entries`, `active`, `createdAt` |
+| `draws`                | `{id}`               | `date`, `selectedWinner`, `selectedWinnerId`, `cardChosen`, `result`, `jackpotAmount`, `activeEntrants`, `entryFee`, `entryContribution`, `winnerPayout`, `charityAmount`, `previousState`, `historyDocId`, `voided`, `voidedAt`, `voidedBy` |
+| `history`              | `{id}`               | `winner`, `date`, `cardChosen`, `jokerFound`, `jackpotAmount`, `winnerPayout`, `charityAmount` |
 | `auditLogs`            | `{id}`               | `action`, `user`, `timestamp`, `details` |
 
 `draws` and `history` are intentionally similar — `draws` is the detailed
-internal log (admin-only), `history` is the trimmed, public-safe feed shown
-on the display page as "Previous winners."
+internal log (admin-only, including the entry-fee maths and undo snapshot
+for that draw), `history` is the trimmed, public-safe feed shown on the
+display page as "Previous winners."
+
+### Jackpot economics
+
+The pot doesn't grow by a flat amount each week — it grows by
+**active entrants × entry fee** (default £1/entrant), calculated live from
+however many people are marked active at the moment the draw is run. That
+contribution is added to the pot *before* the outcome is decided, so:
+
+- A **Joker win** splits the pot 50/50: half pays out to the winner, half is
+  added to the running `totalRaisedForCharity` figure (shown on both the
+  public page and the admin Overview). The jackpot then resets to the
+  starting value.
+- A **standard card** rolls the jackpot (now including this week's entries)
+  over to next week untouched.
+
+Change the entry fee any time from Admin → Settings → "Entry fee per
+entrant." The 50/50 split itself is fixed in `js/admin.js`
+(`runDrawTransaction`) — search for `winnerPayout` if you ever need a
+different ratio.
 
 ---
 
@@ -192,9 +258,10 @@ A few decisions worth knowing about if you extend this app:
 
 ## 7. Customising
 
-- **Deck size / starting jackpot / weekly increment** — Admin → Settings.
+- **Deck size / starting jackpot / entry fee** — Admin → Settings.
   Changing deck size reshuffles: all cards return to play and a fresh Joker
-  position is generated.
+  position is generated. The entry fee controls how much each active
+  entrant contributes to the pot per draw (see "Jackpot economics" above).
 - **Colours, fonts, "Felt" vs "Parchment" themes** — CSS custom properties
   in `css/styles.css` (`:root` and `:root[data-theme="parchment"]`).
 - **Card grid columns** — `.card-grid` in `css/styles.css` (defaults to 5,

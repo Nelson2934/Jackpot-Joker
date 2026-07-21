@@ -11,9 +11,47 @@
 </head>
 <body>
 
+<!-- Diagnostic banner: only ever shows up if something actually goes wrong
+     loading/running the dashboard script (blocked network, opened as a
+     local file instead of served, a real JS error, etc). Silent by default. -->
+<div id="jjLoadError" role="alert" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#b23a48;color:#fff2f2;padding:14px 18px;font-family:system-ui,sans-serif;font-size:0.9rem;line-height:1.5;box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
+
+<script>
+  function jjShowLoadError(msg) {
+    var el = document.getElementById('jjLoadError');
+    if (!el) return;
+    el.innerHTML = msg;
+    el.style.display = 'block';
+  }
+  window.__jjAdminBooted = false;
+  window.addEventListener('error', function (e) {
+    // Ignore noise from unrelated third-party browser extensions.
+    if (e.filename && e.filename.indexOf('chrome-extension://') !== -1) return;
+    jjShowLoadError(
+      '⚠️ A script error stopped the dashboard from loading: <strong>' +
+        (e.message || 'unknown error') +
+        '</strong> (' + (e.filename || 'unknown file') + (e.lineno ? ':' + e.lineno : '') + ').' +
+        ' Open the browser console (F12 → Console) for full details.'
+    );
+  });
+  // Watchdog: if admin.js hasn't confirmed it started running within a few
+  // seconds, something failed to load entirely (blocked network, wrong
+  // protocol, 404, etc) rather than throwing a catchable error.
+  setTimeout(function () {
+    if (!window.__jjAdminBooted) {
+      jjShowLoadError(
+        '⚠️ The admin dashboard script never started. Most likely causes: ' +
+          '(1) you opened this file directly (file://) instead of through a web server — see README "Run it locally"; ' +
+          'or (2) your network/browser is blocking <code>https://www.gstatic.com</code>, which Firebase\'s SDK loads from. ' +
+          'Check the browser console (F12 → Console) for the exact error.'
+      );
+    }
+  }, 4000);
+</script>
+
 <!-- ===================== LOGIN VIEW ===================== -->
 <div id="loginView" class="login-screen">
-  <form id="loginForm" class="login-card" autocomplete="on">
+  <form id="loginForm" class="login-card" autocomplete="on" onsubmit="return false;">
     <span class="brand__mark" style="margin:0 auto 18px;">JJ</span>
     <h1 class="login-card__title">Admin sign in</h1>
     <p class="login-card__sub">Jackpot Joker dashboard — authorised committee members only.</p>
@@ -292,4 +330,25 @@
     <textarea id="bulkImportText" class="field__input" rows="8" placeholder="Jane Doe&#10;John Smith, 10&#10;Priya Patel, 3"></textarea>
     <div class="modal__actions">
       <button type="button" class="btn btn--ghost" id="bulkImportCancel">Cancel</button>
-      <button type="button" class="btn btn--primary" id="bulkImportSubmit">Import entra
+      <button type="button" class="btn btn--primary" id="bulkImportSubmit">Import entrants</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reusable confirm dialog (used by utils.confirmAction) -->
+<div class="confirm-dialog" id="confirmDialog" aria-hidden="true">
+  <div class="confirm-dialog__panel">
+    <h3 class="confirm-dialog__title">Are you sure?</h3>
+    <p class="confirm-dialog__message"></p>
+    <div class="confirm-dialog__actions">
+      <button class="btn btn--ghost confirm-dialog__cancel" type="button">Cancel</button>
+      <button class="btn btn--danger confirm-dialog__confirm" type="button">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div id="toastRoot" class="toast-root"></div>
+
+<script type="module" src="../js/admin.js" onerror="jjShowLoadError('⚠️ Failed to load js/admin.js (404 or blocked). If you opened this page directly as a file, serve it through a local server instead — see README &quot;Run it locally&quot;.')"></script>
+</body>
+</html>

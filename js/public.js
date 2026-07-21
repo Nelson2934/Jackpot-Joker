@@ -50,6 +50,7 @@ const statActiveEntries = document.getElementById("statActiveEntries");
 const statCardsRemaining = document.getElementById("statCardsRemaining");
 const statNextDraw = document.getElementById("statNextDraw");
 const statTotalCards = document.getElementById("statTotalCards");
+const statCharityTotal = document.getElementById("statCharityTotal");
 const cardGrid = document.getElementById("cardGrid");
 
 const SUITS = ["spade", "heart", "club", "diamond"];
@@ -106,6 +107,7 @@ onSnapshot(
     const remaining = Math.max((data.totalCards || 0) - removed.length, 0);
     statCardsRemaining.textContent = remaining;
     statNextDraw.textContent = data.nextDrawDate ? formatDate(data.nextDrawDate) : "TBC";
+    statCharityTotal.textContent = formatGBP(data.totalRaisedForCharity ?? 0);
 
     const status = data.gameStatus || "active";
     gameStatusEl.classList.toggle("is-paused", status !== "active");
@@ -115,8 +117,8 @@ onSnapshot(
     const entryFee = data.entryFee ?? 1;
     jackpotSubEl.textContent =
       remaining <= 3 && remaining > 0
-        ? `Only ${remaining} card${remaining === 1 ? "" : "s"} left — the odds are shortening!`
-        : `Find the Joker among the cards to win the lot. £${entryFee.toFixed(2)} per entry rolls into the pot every week it isn't won.`;
+        ? `Only ${remaining} card${remaining === 1 ? "" : "s"} left — the odds are shortening! Find the Joker and half the pot is yours.`
+        : `Find the Joker among the cards and take home half the pot — the other half goes straight to charity. £${entryFee.toFixed(2)} per entry rolls into the pot every week it isn't won.`;
 
     renderDeck(data.totalCards || 0, removed);
   },
@@ -163,7 +165,11 @@ onSnapshot(
             d.jokerFound ? " · JOKER" : ""
           }</div>
         </div>
-        <div class="history-row__amount">${d.jokerFound ? formatGBP(d.jackpotAmount) : "rolled over"}</div>
+        <div class="history-row__amount">${
+          d.jokerFound
+            ? `${formatGBP(d.winnerPayout ?? d.jackpotAmount / 2)} won<br><span style="font-size:.72rem;opacity:.7;font-weight:500;">+${formatGBP(d.charityAmount ?? d.jackpotAmount / 2)} to charity</span>`
+            : "rolled over"
+        }</div>
         <div></div>
       `;
       frag.appendChild(row);

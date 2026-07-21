@@ -189,6 +189,9 @@ textarea.field__input { resize: vertical; font-family: var(--font-mono); font-si
 }
 .data-table tbody tr:last-child td { border-bottom: none; }
 .data-table tbody tr:hover { background: var(--bg-recessed); }
+.data-table tbody tr.is-voided { opacity: 0.5; text-decoration: line-through; }
+.history-row.is-voided { opacity: 0.5; }
+.history-row.is-voided .history-row__amount { text-decoration: line-through; }
 
 .badge {
   display: inline-flex;
