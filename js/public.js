@@ -9,6 +9,7 @@ import {
   limit,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { formatGBP, formatDate, formatDateShort, showToast, escapeHTML } from "./utils.js";
+import { cardBackHTML } from "./cards.js";
 
 /* ---------------------------------------------------------------------- *
  * THEME TOGGLE
@@ -53,8 +54,6 @@ const statTotalCards = document.getElementById("statTotalCards");
 const statCharityTotal = document.getElementById("statCharityTotal");
 const cardGrid = document.getElementById("cardGrid");
 
-const SUITS = ["spade", "heart", "club", "diamond"];
-
 let lastRemovedSignature = "";
 
 function renderDeck(totalCards, removedCards) {
@@ -74,17 +73,7 @@ function renderDeck(totalCards, removedCards) {
     slot.className = "card-slot";
     slot.dataset.state = taken ? "taken" : "available";
     slot.style.animationDelay = `${Math.min(n * 12, 400)}ms`;
-
-    const suit = SUITS[n % SUITS.length];
-
-    slot.innerHTML = `
-      <div class="card-slot__inner">
-        <div class="card-face card-face--back">
-          <span class="card-face__number">${n}</span>
-          <span class="card-face__suit card-face__suit--${suit}" aria-hidden="true"></span>
-        </div>
-      </div>
-    `;
+    slot.innerHTML = `<div class="card-slot__inner">${cardBackHTML(n, { ariaLabel: taken ? `Card ${n}, already drawn` : `Card ${n}, in play` })}</div>`;
     frag.appendChild(slot);
   }
   cardGrid.appendChild(frag);

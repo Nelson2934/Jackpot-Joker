@@ -13,6 +13,7 @@ import {
   escapeHTML,
   debounce,
 } from "./utils.js";
+import { cardBackHTML, cardStandardFrontHTML, cardJokerFrontHTML } from "./cards.js";
 import {
   doc,
   getDoc,
@@ -667,13 +668,8 @@ function renderDrawCardGrid(settingsData) {
     slot.dataset.cardNumber = n;
     slot.innerHTML = `
       <div class="card-slot__inner">
-        <div class="card-face card-face--back">
-          <button class="card-hit" type="button" ${taken ? "disabled" : ""} aria-label="Pick card ${n}"></button>
-          <span class="card-face__number">${n}</span>
-        </div>
-        <div class="card-face card-face--front" aria-hidden="true">
-          <span class="card-face__number">${n}</span>
-        </div>
+        ${cardBackHTML(n, { asButton: true, disabled: taken, ariaLabel: `Pick card ${n}` })}
+        ${cardStandardFrontHTML(n)}
       </div>`;
     frag.appendChild(slot);
   }
@@ -697,10 +693,9 @@ async function revealCard(cardNumber, slotEl) {
 
     // Flip animation
     slotEl.classList.add("is-flipped");
-    const frontFace = slotEl.querySelector(".card-face--front");
     if (result.jokerFound) {
-      frontFace.classList.add("is-joker");
-      frontFace.innerHTML = `<span class="card-face__label">JOKER</span><span class="card-face__number">🃏</span>`;
+      const frontFace = slotEl.querySelector(".card-face--front");
+      frontFace.outerHTML = cardJokerFrontHTML();
       slotEl.classList.add("is-joker-reveal");
     }
 
